@@ -1,0 +1,288 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+// Manually include our classes
+require_once __DIR__ . '/../src/BladeEmailer/TemplateManager.php';
+require_once __DIR__ . '/../src/BladeEmailer/EmailRunner.php';
+require_once __DIR__ . '/../src/BladeEmailer/EmailService.php';
+
+use BladeEmailer\EmailService;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+
+class SendEmailCommand extends Command
+{
+    protected static $defaultName = 'send';
+
+    protected function configure()
+    {
+        $this
+            ->setDescription('Send an email')
+            ->addArgument('to', InputArgument::REQUIRED, 'Recipient email address')
+            ->addArgument('subject', InputArgument::REQUIRED, 'Email subject')
+            ->addOption('template', 't', InputOption::VALUE_REQUIRED, 'Template name')
+            ->addOption('html', null, InputOption::VALUE_REQUIRED, 'HTML content')
+            ->addOption('text', null, InputOption::VALUE_REQUIRED, 'Text content')
+            ->addOption('data', 'd', InputOption::VALUE_REQUIRED, 'Template data as JSON')
+            ->addOption('from', 'f', InputOption::VALUE_REQUIRED, 'From email address')
+            ->addOption('cc', 'c', InputOption::VALUE_REQUIRED, 'CC email addresses (comma-separated)')
+            ->addOption('bcc', 'b', InputOption::VALUE_REQUIRED, 'BCC email addresses (comma-separated)');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
+        $config = require __DIR__ . '/../config/email.php';
+        $emailService = new EmailService($config);
+
+        $options = [
+            'to' => $input->getArgument('to'),
+            'subject' => $input->getArgument('subject'),
+        ];
+
+        if ($from = $input->getOption('from')) {
+            $options['from'] = $from;
+        }
+
+        if ($cc = $input->getOption('cc')) {
+            $options['cc'] = explode(',', $cc);
+        }
+
+        if ($bcc = $input->getOption('bcc')) {
+            $options['bcc'] = explode(',', $bcc);
+        }
+
+        if ($template = $input->getOption('template')) {
+            $options['template'] = $template;
+            if ($data = $input->getOption('data')) {
+                $options['data'] = json_decode($data, true);
+            }
+        } elseif ($html = $input->getOption('html')) {
+            $options['html'] = $html;
+        } elseif ($text = $input->getOption('text')) {
+            $options['text'] = $text;
+        } else {
+            $output->writeln('<error>Either --template, --html, or --text is required</error>');
+            return 1;
+        }
+
+        try {
+            $result = $emailService->sendEmail($options);
+            if ($result) {
+                $output->writeln('<info>Email sent successfully!</info>');
+                return 0;
+            } else {
+                $output->writeln('<error>Failed to send email</error>');
+                return 1;
+            }
+        } catch (Exception $e) {
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return 1;
+        }
+    }
+}
+
+class TemplateCommand extends Command
+{
+    protected static $defaultName = 'template';
+
+    protected function configure()
+    {
+        $this
+            ->setDescription('Manage email templates')
+            ->addArgument('action', InputArgument::REQUIRED, 'Action: create, list, show, update, delete')
+            ->addArgument('name', InputArgument::OPTIONAL, 'Template name')
+            ->addOption('content', null, InputOption::VALUE_REQUIRED, 'Template content');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
+        $config = require __DIR__ . '/../config/email.php';
+        $emailService = new EmailService($config);
+
+        $action = $input->getArgument('action');
+        $name = $input->getArgument('name');
+
+        try {
+            switch ($action) {
+                case 'list':
+                    $templates = $emailService->getAvailableTemplates();
+                    if (empty($templates)) {
+                        $output->writeln('No templates found.');
+                    } else {
+                        $output->writeln('Available templates:');
+                        foreach ($templates as $template) {
+                            $output->writeln("  - {$template}");
+                        }
+                    }
+                    break;
+
+                case 'show':
+                    if (!$name) {
+                        $output->writeln('<error>Template name is required</error>');
+                        return 1;
+                    }
+                    $content = $emailService->getTemplateContent($name);
+                    $output->writeln($content);
+                    break;
+
+                case 'create':
+                    if (!$name) {
+                        $output->writeln('<error>Template name is required</error>');
+                        return 1;
+                    }
+                    $content = $input->getOption('content') ?: $this->getDefaultTemplate();
+                    $result = $emailService->createTemplate($name, $content);
+                    if ($result) {
+                        $output->writeln("<info>Template '{$name}' created successfully!</info>");
+                    } else {
+                        $output->writeln('<error>Failed to create template</error>');
+                        return 1;
+                    }
+                    break;
+
+                case 'update':
+                    if (!$name) {
+                        $output->writeln('<error>Template name is required</error>');
+                        return 1;
+                    }
+                    $content = $input->getOption('content');
+                    if (!$content) {
+                        $output->writeln('<error>Template content is required for update</error>');
+                        return 1;
+                    }
+                    $result = $emailService->updateTemplate($name, $content);
+                    if ($result) {
+                        $output->writeln("<info>Template '{$name}' updated successfully!</info>");
+                    } else {
+                        $output->writeln('<error>Failed to update template</error>');
+                        return 1;
+                    }
+                    break;
+
+                case 'delete':
+                    if (!$name) {
+                        $output->writeln('<error>Template name is required</error>');
+                        return 1;
+                    }
+                    $result = $emailService->deleteTemplate($name);
+                    if ($result) {
+                        $output->writeln("<info>Template '{$name}' deleted successfully!</info>");
+                    } else {
+                        $output->writeln('<error>Failed to delete template</error>');
+                        return 1;
+                    }
+                    break;
+
+                default:
+                    $output->writeln('<error>Invalid action. Use: create, list, show, update, delete</error>');
+                    return 1;
+            }
+        } catch (Exception $e) {
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private function getDefaultTemplate(): string
+    {
+        return <<<'BLADE'
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{ $title ?? 'Email' }}</title>
+</head>
+<body>
+    <h1>{{ $title ?? 'Hello' }}</h1>
+    <p>{{ $message ?? 'This is a test email.' }}</p>
+    
+    @if(isset($data))
+        <h2>Data:</h2>
+        <ul>
+            @foreach($data as $key => $value)
+                <li><strong>{{ $key }}:</strong> {{ $value }}</li>
+            @endforeach
+        </ul>
+    @endif
+</body>
+</html>
+BLADE;
+    }
+}
+
+class TestCommand extends Command
+{
+    protected static $defaultName = 'test';
+
+    protected function configure()
+    {
+        $this->setDescription('Test email configuration');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
+        $config = require __DIR__ . '/../config/email.php';
+        $emailService = new EmailService($config);
+
+        $output->writeln('Testing email configuration...');
+        
+        if ($emailService->testConnection()) {
+            $output->writeln('<info>✓ SMTP connection successful!</info>');
+        } else {
+            $output->writeln('<error>✗ SMTP connection failed!</error>');
+            return 1;
+        }
+
+        return 0;
+    }
+}
+
+class PreviewCommand extends Command
+{
+    protected static $defaultName = 'preview';
+
+    protected function configure()
+    {
+        $this
+            ->setDescription('Start localhost preview server for templates')
+            ->addOption('port', 'p', InputOption::VALUE_REQUIRED, 'Port to run the server on', 8080)
+            ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host to bind the server to', 'localhost');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
+        $host = $input->getOption('host');
+        $port = $input->getOption('port');
+        
+        $output->writeln("<info>Starting Blade Emailer preview server...</info>");
+        $output->writeln("<info>Server will be available at: http://{$host}:{$port}</info>");
+        $output->writeln("<info>Press Ctrl+C to stop the server</info>");
+        $output->writeln("");
+        
+        // Start the built-in PHP server
+        $command = "php -S {$host}:{$port} " . __DIR__ . "/../preview-server.php";
+        
+        $output->writeln("Running: {$command}");
+        $output->writeln("");
+        
+        // Execute the command
+        passthru($command);
+        
+        return 0;
+    }
+}
+
+$application = new Application('Blade Email Runner', '1.0.0');
+$application->add(new SendEmailCommand());
+$application->add(new TemplateCommand());
+$application->add(new TestCommand());
+$application->add(new PreviewCommand());
+$application->run();

@@ -1,0 +1,29 @@
+{
+    "name": "blade-emailer/email-runner",
+    "description": "A PHP email runner with Blade templating support",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "illuminate/view": "^8.0",
+        "illuminate/filesystem": "^8.0",
+        "illuminate/support": "^8.0",
+        "phpmailer/phpmailer": "^6.8",
+        "symfony/console": "^5.0",
+        "phpoption/phpoption": "^1.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "BladeEmailer\\": "src/"
+        }
+    },
+    "bin": ["bin/email-runner"],
+    "scripts": {
+        "post-install-cmd": [
+            "mkdir -p templates",
+            "mkdir -p config",
+            "mkdir -p storage/cache"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
