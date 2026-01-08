@@ -6,3 +6,16 @@ php send-test.php
 
 # clear cache
 rm -rf storage/cache/*
+
+# Generate PDF from Blade template
+# First, install DomPDF library:
+composer require dompdf/dompdf
+
+# Then generate PDF using the example script:
+php generate-pdf.php
+
+# To generate PDF from a custom template, edit generate-pdf.php:
+# 1. Change the $templateName variable to your template name
+# 2. Update the $data array with your template variables
+# 3. Run: php generate-pdf.php
+# The PDF will be saved as output.pdf in the project root
