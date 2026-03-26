@@ -22,7 +22,7 @@ try {
     $result = $emailService->sendEmail([
         'to' => 'oleksii.borovykov@scrumlaunch.com',
         'subject' => 'Welcome to Blade Emailer!',
-        'template' => 'test',
+        'template' => 'share-email',
 'data' => [
     'request_id' => 'AR-1365',
     'trip_type' => 1,
